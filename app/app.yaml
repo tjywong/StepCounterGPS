@@ -1,0 +1,6 @@
+name: Gait Step Counter
+description: Ankle-worn MPU6050 that tells standing, walking, running and biking apart with two non-neural models, and counts steps with a neural network.
+icon: 🦶
+ports: []
+bricks:
+- arduino:web_ui: {}
