@@ -2,7 +2,7 @@
 // raw readings to the Linux side over the Bridge. The Linux side sends back the
 // two models' predictions, shown on the LED matrix:
 //   left letter = model 1 (peak accel only), right letter = model 2 (all IMU)
-//   S = standing, W = walking, R = running, B = biking
+//   S = standing, W = walking, R = running, B = biking, U = stairs up, D = stairs down
 //
 // Wiring (MPU6050 -> UNO Q): VCC -> 3.3V, GND -> GND, SDA -> SDA, SCL -> SCL.
 
@@ -17,12 +17,15 @@ const int BATCH = 10;                   // samples per Bridge message
 Arduino_LED_Matrix matrix;
 
 // 5x7 glyphs, one byte per row, low 5 bits used (bit 4 = leftmost column).
-const uint8_t GLYPHS[4][7] = {
+const uint8_t GLYPHS[6][7] = {
   {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},  // S
   {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A},  // W
   {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11},  // R
   {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E},  // B
+  {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},  // U (stairs up)
+  {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E},  // D (stairs down)
 };
+const int N_GLYPHS = sizeof(GLYPHS) / sizeof(GLYPHS[0]);
 
 volatile int shownPeak = -1, shownFull = -1;
 volatile bool displayDirty = false;
@@ -73,7 +76,7 @@ bool readMpu(int16_t v[6]) {
 }
 
 void drawGlyph(uint32_t frame[4], int glyph, int col0) {
-  if (glyph < 0 || glyph > 3) return;
+  if (glyph < 0 || glyph >= N_GLYPHS) return;
   for (int r = 0; r < 7; r++) {
     for (int c = 0; c < 5; c++) {
       if (GLYPHS[glyph][r] & (0x10 >> c)) {

@@ -5,6 +5,7 @@ Ground truth for each recording, in order of preference:
   2. otherwise the offline stride detector below, rescaled to the hand-counted total in
      data/step_counts.csv when you've entered one on the control page.
 Standing and biking recordings always get zero steps, whatever the detector says.
+Stairs (up and down) count steps like walking.
 
 The detector works on the whole recording at once (non-causal) and knows the activity,
 which is exactly what the board can't do live: that's the network's job.
@@ -20,7 +21,7 @@ import numpy as np
 from scipy.signal import butter, filtfilt, find_peaks
 
 FS = 50
-STEPPING = {"walking", "running"}
+STEPPING = {"walking", "running", "stairs_up", "stairs_down"}
 COUNTS_FILE = "step_counts.csv"
 
 

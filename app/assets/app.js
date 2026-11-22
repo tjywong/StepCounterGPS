@@ -28,9 +28,11 @@ $('#recordings').addEventListener('click', (e) => {
   if (name && confirm(`Delete ${name}?`)) ui.send_message('delete_recording', { name });
 });
 
+const pretty = (l) => (l[0].toUpperCase() + l.slice(1)).replace('_up', ' ↑').replace('_down', ' ↓');
+
 function buildLabels(labels) {
   $('#labels').innerHTML = labels
-    .map((l) => `<button data-label="${l}">${l[0].toUpperCase() + l.slice(1)}</button>`)
+    .map((l) => `<button data-label="${l}">${pretty(l)}</button>`)
     .join('');
   labelsBuilt = true;
 }
@@ -60,8 +62,8 @@ ui.on_message('status', (s) => {
   if (s.mode === 'classify') {
     $('#dir').textContent = s.direction;
     const p = s.prediction;
-    $('#m1').textContent = p ? p.model1 : 'warming up…';
-    $('#m2').textContent = p ? p.model2 : 'warming up…';
+    $('#m1').textContent = p ? pretty(p.model1) : 'warming up…';
+    $('#m2').textContent = p ? pretty(p.model2) : 'warming up…';
     $('#peak').textContent = p ? p.peak_g.toFixed(2) : '–';
     $('#steps').textContent = s.steps ?? 'no model';
     $('#cadence').textContent = s.steps == null ? '–' : s.cadence;
@@ -69,10 +71,10 @@ ui.on_message('status', (s) => {
 
   const totals = {};
   s.recordings.forEach((r) => {
-    const l = r.name.split('_')[0];
+    const l = s.labels.filter((x) => r.name.startsWith(x + '_')).sort((a, b) => b.length - a.length)[0];
     totals[l] = (totals[l] || 0) + 1;
   });
-  $('#rec-summary').textContent = s.labels.map((l) => `${l} ${totals[l] || 0}`).join(' · ');
+  $('#rec-summary').textContent = s.labels.map((l) => `${pretty(l)} ${totals[l] || 0}`).join(' · ');
   // Re-render only on change, and never under the cursor of someone typing a step count.
   const key = JSON.stringify([s.recordings, s.mode, s.file]);
   if (key === recordingsKey || document.activeElement?.matches('#recordings input')) return;

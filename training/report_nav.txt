@@ -1,0 +1,22 @@
+stride calibration (all routes): A 0.692 m per 60 deg swing (measured), B 0.544 m per 60 deg swing (route length)
+
+=== Halligan to Tisch: 4 walks (0 DAgger), limit 10, turns >= 45 deg, length unknown
+walk                        walker       acc  maneuvers  false alarms  announced early by (s)
+sim00_A_halligan            A            82%    4/5         0         [3.8, -1.6, 1.0, 2.4]
+sim01_B_halligan            B            87%    5/5         1         [-1.8, 6.0, -1.8, -1.8, -1.8]
+sim02_A_halligan            A            79%    4/5         0         [3.0, 1.2, -3.2, -4.2]
+sim03_B_halligan            B            80%    5/5         0         [-3.2, 5.6, 2.8, 7.0, 5.8]
+
+=== Tisch to Campus Center: 4 walks (0 DAgger), limit 10, turns >= 45 deg, length unknown
+walk                        walker       acc  maneuvers  false alarms  announced early by (s)
+sim04_A_tisch               A            92%    5/5         0         [-0.2, -0.4, -0.4, 5.0, 1.2]
+sim05_B_tisch               B            89%    5/5         0         [-0.2, -1.8, -3.0, 4.6, 1.4]
+sim06_A_tisch               A            92%    5/5         0         [-0.2, -0.4, -0.4, -4.6, -2.0]
+sim07_B_tisch               B            68%    4/5         0         [6.2, -6.6, -6.8, -0.2]
+
+maneuvers announced: 37/40   false alarms: 1
+
+distance check (calibrated on the other walks; error vs the distance you typed):
+  sim00_A_halligan            swing-sized steps  -4.9%   fixed step length  -5.3%
+  sim04_A_tisch               swing-sized steps  +5.2%   fixed step length  +5.6%
+  mean |error|: swing 5.1%, fixed step 5.5%

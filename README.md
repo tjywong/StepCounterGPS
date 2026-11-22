@@ -1,13 +1,13 @@
-# Gait Identifier
+# Gait Identifier + Campus Navigator
 
-An ankle-worn Arduino UNO Q + Cytron MPU6050 that classifies **standing, walking, running and biking** (real biking, or lying on your back and air-biking) with two non-neural models:
+An ankle-worn Arduino UNO Q + Cytron MPU6050 that classifies **standing, walking, running, biking** (real biking, or lying on your back and air-biking) **and stairs up / down** (once you've recorded stairs, see below) with two non-neural models:
 
 | | Input | Classifier |
 |---|---|---|
 | **Model 1** | Peak acceleration along **one** signed axis in a 2.56 s window, measured from the window's mean so gravity drops out and the value reflects movement, not sensor tilt | Up to 3 thresholds (a 4-leaf decision tree on that single number). Training tries all six directions (±x, ±y, ±z) and keeps the best. |
 | **Model 2** | All IMU outputs: accel x/y/z, gyro x/y/z, plus their magnitudes | Random forest on 86 features: mean, std, min, max, range, mean absolute deviation, zero-crossing rate, dominant cadence frequency and its power share, and jerk for each channel, plus axis correlations |
 
-Both models run live on the board. The LED matrix shows **model 1 on the left, model 2 on the right**: `S` standing, `W` walking, `R` running, `B` biking.
+Both models run live on the board. The LED matrix shows **model 1 on the left, model 2 on the right**: `S` standing, `W` walking, `R` running, `B` biking, `U` stairs up, `D` stairs down.
 
 It also **counts steps with a neural network** trained in PyTorch (see [Step counter](#step-counter)). The count and cadence show on the control page.
 
@@ -47,7 +47,7 @@ MPU6050 --I2C 50 Hz--> MCU (sketch.ino) --Bridge, 10 samples/msg--> Linux (main.
 1. Copy `app/` into App Lab as an app. On the board, apps live in `~/ArduinoApps/`.
 2. Run the app and open the control page at `http://<board-ip>:7000` on your phone or laptop. Pick the **activity** and press **Record**.
 3. Do that one activity, then press **Idle** (or pick the next activity, which starts a new file). Each recording is saved as `recordings/<label>_<time>.csv` in the app folder. The page shows how many seconds you have, a count per activity, and a delete button for bad takes. `MODE` / `RECORD_LABEL` at the top of `main.py` only set what happens at startup.
-4. Record **at least 2 sessions (3+ is better) of 1–3 minutes per activity**, on different occasions. For biking, include air-biking sessions if you'll test with air-biking. The first and last 5 s of each file are discarded.
+4. Record **at least 2 sessions (3+ is better) of 1–3 minutes per activity**, on different occasions. **Stairs:** the shipped models were trained before stairs existed, so they never predict them. Record `Stairs ↑` and `Stairs ↓` sessions on a few different staircases (walk up a flight, stop the recording or switch to the other direction at the top), count your steps, and retrain both `train.py` and `train_steps.py`. Stairs count steps like walking. Short flights of 3–4 steps are shorter than the classifier's 2.56 s window and will mostly be missed. For biking, include air-biking sessions if you'll test with air-biking. The first and last 5 s of each file are discarded.
 5. Optional, for the step counter: while walking or running, count your steps, then type the total into the **steps** box next to that file on the page. Counts are saved in `recordings/step_counts.csv`.
 
 ### 2. Train (on your laptop)
@@ -117,6 +117,81 @@ What the network clearly adds is ignoring pedalling and fidgeting, plus a better
 \* scored before the warm-up fix, so walking is a few steps low.
 
 Without sensor dropout, the gyro dominates and the count falls apart on running, which this data never shows the networks. Accelerometer impacts carry over to running much better. Dropout makes the all-sensor model use both. It's the best on walking and on ignoring biking, but with one running recording, accel-only still counts running better. Once you have a few running recordings, retrain both (`--inputs accel` vs the default) and keep whichever wins.
+
+## Campus navigator
+
+A behaviour-cloned guide that tells you **straight / turn left / turn right / stairs up / stairs down / arrived** along a route you've demonstrated, using only the ankle IMU: no GPS, wifi, camera or magnetometer. Open `http://<board-ip>:7000/nav.html` on your phone (there's a **Navigator ›** link on the gait page).
+
+### Routes
+
+You can keep as many routes as you like. The **route picker** at the top of every tab shows them (✓ trained, ↻ needs retraining, number of walks), and **＋ New** creates one with a name and, optionally, its length in metres. The board remembers the current route, so both partners' phones always show the same one. Everything you do applies to the picked route:
+- **Walk** records demos and navigates it.
+- **Label** lists only its walks.
+- **Train** trains it alone into its own policy, and shows its settings and held-out check.
+
+Each route has its own **length** (calibrates stride for everyone who walks it) and **turn threshold**. Settings are on the Train tab, along with **rename** (walks and training follow) and **delete** (removes its walks too). You can switch routes at any time; switching during a walk asks first, then stops and saves that walk.
+
+**The 10-walk limit applies per route:** each route's navigator is trained on at most 10 walks (demos + DAgger runs, both of you). If your assignment means 10 walks in total across all routes, set `MAX_TRAIN_WALKS` in `app/python/nav.py` and keep to one route. Stride calibration is per walker and pools walks from every route, since your stride doesn't depend on where you walk.
+
+### How it works
+
+```
+IMU 50 Hz ─┬─> step counter (neural net) ───────────> steps ─┐
+           ├─> gyro across gravity: shank swing ─────────────┴─> distance = Σ step × swing × k
+           ├─> gyro about gravity, bias calibrated ─> heading ─> turn detector (threshold)
+           └─> gait random forest ─> walking / stairs up / stairs down / ...
+every 0.2 s: observation = (distance, distance since last turn, heading, turns so far)
+             policy = 7 nearest demonstration moments of this route ─> instruction
+```
+
+- **Heading** (`app/python/nav.py`) integrates the gyro component along gravity (low-passed accelerometer), so it works however the strap is rotated, and positive is always a left turn. Each walk starts with **2 s standing still** to measure gyro bias (≈6 °/s on this MPU6050, which would otherwise be 360° of drift per minute). Whenever the foot is planted, heading stops integrating and the bias is re-learned. On the recordings in `data/`, the heading barely changes when the gravity low-pass constant goes from 0.5 s to ∞, so shank swing doesn't leak into it.
+- **Distance from shank swing, not a fixed step length.** A longer step swings the shank through a bigger angle (pendulum: step ≈ leg length × swing angle), so slowing down in a crowd shortens your steps on the board too. The gyro component *across* gravity is the swing rate. Over the last ~2 s, swing ÷ steps counted gives degrees per step (≈60° on the walking recordings in `data/`). Every step the neural counter reports is sized by that, delayed 0.5 s to line up with the counter. Standing and biking add nothing, because the step counter gives them zero steps. One number per walker, **k** (metres per degree of swing), turns it into metres.
+- **Calibrating k: tell it how far you walked.** Give the route a **length** (when creating it, or under route settings), which then applies to every walk of it, or type a single walk's **Distance walked** on the Label tab. Measure it on a campus map, or walk a stretch you've measured. Per walker, k comes from the first that applies:
+  1. **measured:** that walker's walks with a typed distance;
+  2. **route length:** walks on a route someone measured;
+  3. **matched to partner:** a route your partner walked, assumed the same length;
+  4. **default:** a 0.70 m step at 60° of swing.
+
+  The Train tab shows each walker's k as "step at 60° swing" and where it came from. Live distances show `≈` until you're calibrated.
+- **Turn detector:** a heading change of at least the route's **turn threshold** (default 45°, set per route on the Train tab) that settles. Smaller changes are wiggles: sidesteps, swerving round people, and the few degrees of foot wobble each stride. Gentle path curves are followed and stay "straight". Raw heading is also a policy input. The detector exists because heading drifts: turns so far and distance since the last turn give checkpoints that don't, and the labels need turn start and end times. Turn counts are recomputed from each walk's stored heading, so a new threshold applies to old walks too. After changing it, redo the auto-labels and train; the policy remembers the threshold it was trained with and navigates with that one.
+- **Stairs classifier:** the gait random forest (model 2) runs every 1.28 s during walks, and its output is stored with each walk. Once it's trained on stairs (see Workflow above), its stairs stretches become auto-labels (thin strip under the label band on the timeline) and show live as "on stairs". Stairs you tap during a walk take priority where both exist. The classifier reports stairs about 2.5 s late; the labels are shifted back to make up for it.
+- **Policy:** distance-weighted k-nearest-neighbours (k = 7) over every 0.2 s of the training walks of that route. With ≤10 walks a parametric model has too little to fit, while kNN can't over- or under-fit, trains instantly on the board, and a DAgger correction takes effect in exactly the states around it. Corrected moments count 3×. Live instructions change only after two agreeing predictions (0.4 s).
+
+### Labels: generated afterwards, fixed before training
+
+Labelling during a walk is hard, so you don't. After a demo the board **labels it in hindsight**: you actually walked the route, so the turns the gyro saw *are* the expert's actions. Each turn is labelled from 4 m before it starts until it ends. Stairs come from your taps and from the classifier, and the last 2 m are "arrived". Corrections from DAgger runs are applied on top. The **Label** tab then shows the walk as a dead-reckoned **map** and a **timeline** (heading, detected turns ▲, label band, classifier stairs, and for DAgger runs what the policy said and what you corrected). Drag on the timeline or tap the map to select a stretch and paint it with the right action. You can also redo the auto-labels with a different lead distance or after typing the walk's distance. **Save & use for training** ticks the walk. At most **10 walks per route** (demos + DAgger runs, both of you together) can be ticked; the board enforces it.
+
+### Workflow
+
+1. **＋ New** route (name, and its length if you know it), or pick one. **Walk tab:** enter your name. Stand still, press **● Record demo**, wait for "measuring gyro bias" to clear, and walk the route. Tap **Up starts / Down starts / Stairs end** at stairs (until the classifier knows stairs, the taps are the only stairs labels). Press **■ Stop & save** at the destination.
+2. **Label tab** opens on that walk. Check the map looks like the route, enter the distance walked if you didn't before, fix any wrong labels (a missed turn, a sidestep detected as a turn), then **Save & use for training**.
+3. Both partners demo the route (e.g. 2 demos each = 4 walks), then **Train** tab → **Train '<route>'**. Repeat 1–3 for each route; each trains separately. The leave-one-walk-out table shows, per walk, how often the instruction matched, how many maneuvers were announced, and false alarms. For walks with a typed distance it also shows the **distance error** of swing-sized steps vs a fixed step length, each calibrated only on the other walks: the check of whether swing is helping.
+4. **DAgger:** **▶ Navigate** the route and follow the instructions honestly. When one is wrong, tap what you should do; the screen shows your correction instead (a left/right correction ends once you've made that turn, others when you tap **Done correcting**). With **Speak** on, the phone says each new instruction and vibrates, so you can keep it in your pocket. The run is saved like a demo: review it, save it, and train again. Use your remaining walks this way on the routes or moments the policy gets wrong.
+
+Walks live in `walks/` in the app folder (`<id>.json` = metadata, labels and 5 Hz trace of steps, swing, heading and activity; `<id>.imu.csv` = raw IMU). Routes, their settings and the current route are in `walks/routes.json`; each route's policy is `walks/policies/<route>.json`. To check on the laptop (every route, or `--route "<name>"`):
+
+```bash
+scp -r arduino@<board>.local:ArduinoApps/<app>/walks .
+python3 training/nav_eval.py --walks walks      # writes training/report_nav.txt
+```
+
+### Synthetic test (pipeline only)
+
+`training/nav_sim.py` builds walks from the **real** ankle recordings in `data/`: walking and standing stretches are stitched into two campus-like routes (3 turns plus a flight of stairs each). Those recordings circle the room, so their rotation about gravity is projected out first; then known turns and a random gyro bias are injected. Two walkers have different step lengths and cadences. Only walker A's first walk of each route has its distance typed in, so walker B is calibrated from the route length. Everything downstream is the board's code.
+
+```bash
+python3 training/nav_sim.py && python3 training/nav_eval.py --walks data_nav_synthetic
+```
+
+With 8 walks (2 routes × 2 walkers × 2), every turn is detected and estimated route lengths are within ~10% of the truth. Held-out walks get **37 of 40 maneuvers announced, 1 false alarm**, at turn thresholds of 30°, 45° or 70° alike (the injected turns are ~90°). Most announcements fall inside the 4 m lead-in, before the turn begins. Swing-sized and fixed-length steps score the same here (5.1% vs 5.5% distance error), because the simulator only slows strides down; it can't make them longer or shorter. **Only your walks at different paces can show whether swing helps**: check the distance errors on the Train tab. All of this tests the software, not real-world accuracy.
+
+### Limitations
+
+- **Route must be chosen;** the device doesn't know where you are. Start every walk at the same spot, facing the same way.
+- **Distance drift:** expect a few % error even when calibrated. Turns act as checkpoints and *distance since the last turn* keeps errors local, but long legs with no turn are where early or late instructions come from. **Arrival** is the last 2 m of the demos, so a walker whose distance comes up a few metres short may not be told "arrived"; that's a good DAgger correction to make.
+- **Swing vs. stride length is unverified on real data:** the recordings in `data/` have no measured distances (and "running" there, done circling a room, shows no more swing per step than walking).
+- **Stairs need recordings** before the classifier knows them; until then, tap them.
+- **Detours:** an extra turn (around a crowd) shifts *turns so far*. Heading and distance usually still pick the right neighbours, but a correction here is good DAgger data.
 
 ## Synthetic data (pipeline test only)
 

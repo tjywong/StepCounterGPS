@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Campus Navigator</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="navpage">
+    <main>
+      <header>
+        <h1>Campus Navigator</h1>
+        <span><a href="index.html" class="pill">Gait</a> <span id="conn" class="pill off">connecting…</span></span>
+      </header>
+
+      <div class="routebar">
+        <label class="route-pick">Route <span class="hint">✓ trained · ↻ retrain · (walks)</span>
+          <select id="route-select"></select>
+        </label>
+        <button class="small" id="route-new-btn">＋ New</button>
+      </div>
+      <div id="route-state" class="sub dim"></div>
+      <form id="route-new" class="card" hidden>
+        <div class="form">
+          <label class="wide">Name <input id="new-name" autocomplete="off" placeholder="e.g. Halligan to Tisch" maxlength="60"></label>
+          <label>Length (m) <input id="new-len" type="number" min="1" step="1" inputmode="decimal" placeholder="if known"></label>
+        </div>
+        <div class="sub dim">Length is optional: measure it on a campus map. It calibrates stride length for everyone who walks this route.</div>
+        <div class="seg go"><button type="submit">Create route</button><button type="button" id="new-cancel">Cancel</button></div>
+      </form>
+
+      <div class="seg tabs" id="tabs">
+        <button data-tab="walk" class="sel">Walk</button>
+        <button data-tab="label">Label</button>
+        <button data-tab="train">Train</button>
+      </div>
+      <div id="msg" class="note" hidden></div>
+
+      <!-- ============================================================ WALK -->
+      <section data-pane="walk">
+        <div id="setup">
+          <div class="form">
+            <label class="wide">Walker <input id="walker" autocomplete="off" placeholder="your name"></label>
+          </div>
+          <div class="sub dim">Walks are recorded on the route picked above. There's no step length to set: each step's
+            length comes from how far your shank swings, calibrated by how far you walked (the route's length on the
+            Train tab, or a walk's distance on the Label tab).</div>
+          <div class="sub" id="cal-line"></div>
+          <div class="empty-route warn" id="no-route" hidden>Create a route first (＋ New above).</div>
+          <div class="seg go">
+            <button id="start-demo">● Record demo</button>
+            <button id="start-nav">▶ Navigate</button>
+          </div>
+          <div class="sub dim">
+            <b>Demo</b>: walk the route the way you would show a friend. Turns are picked up by the gyro, so you only tap for stairs.<br>
+            <b>Navigate</b>: the policy gives instructions. Tap a correction whenever it's wrong; that run becomes DAgger data.
+          </div>
+        </div>
+
+        <div id="live" class="card" hidden>
+          <div class="live-head">
+            <span id="live-kind" class="pill"></span>
+            <span class="dim" id="live-route"></span>
+          </div>
+          <div id="calib" class="calib">Stand still: measuring gyro bias…</div>
+          <div id="instr" class="instr" data-action="straight">
+            <div class="glyph" id="instr-glyph">↑</div>
+            <div class="instr-text" id="instr-text">Straight</div>
+            <div class="sub" id="instr-who"></div>
+          </div>
+          <div class="sub center" id="s-activity"></div>
+          <div class="stats">
+            <div><b id="s-dist">0</b><small id="s-dist-unit">m</small></div>
+            <div><b id="s-steps">0</b><small>steps</small></div>
+            <div><b id="s-head">0</b><small>° heading</small></div>
+            <div><b id="s-turns">0</b><small>turns</small></div>
+          </div>
+
+          <div id="correct-box" hidden>
+            <h2>Wrong? Tap what you should do</h2>
+            <div class="grid3" id="correct">
+              <button data-action="left">↰ Left</button>
+              <button data-action="straight">↑ Straight</button>
+              <button data-action="right">↱ Right</button>
+              <button data-action="stairs_up">⇡ Stairs up</button>
+              <button data-action="stairs_down">⇣ Stairs down</button>
+              <button data-action="arrived">● Arrived</button>
+            </div>
+            <button id="auto" class="wide-btn" hidden>Done correcting: back to the policy</button>
+            <div class="sub dim">A left/right correction ends by itself when you've made that turn.</div>
+          </div>
+
+          <h2>Stairs <span class="hint">tap at the first and last step</span></h2>
+          <div class="grid3" id="marks">
+            <button data-mark="stairs_up">⇡ Up starts</button>
+            <button data-mark="stairs_down">⇣ Down starts</button>
+            <button data-mark="stairs_end">Stairs end</button>
+          </div>
+          <div class="sub dim" id="last-mark"></div>
+
+          <label class="check"><input type="checkbox" id="speak" checked> Speak and vibrate when the instruction changes</label>
+          <button id="stop" class="wide-btn stop">■ Stop &amp; save</button>
+        </div>
+        <div class="sub dim" id="walk-count"></div>
+      </section>
+
+      <!-- ============================================================ LABEL -->
+      <section data-pane="label" hidden>
+        <h2>Walks of this route <span class="hint" id="walks-summary"></span></h2>
+        <ul id="walks" class="walks"></ul>
+
+        <div id="editor" class="card" hidden>
+          <div class="ed-head">
+            <div><b id="ed-title"></b><div class="sub dim" id="ed-info"></div></div>
+          </div>
+          <canvas id="map" class="map"></canvas>
+          <div class="sub dim">Map from steps × heading, coloured by label. Tap it to select the segment there.</div>
+
+          <div class="tl-tools">
+            <span class="sub dim">Drag on the timeline to select</span>
+            <span><button class="small" id="zoom-out">−</button> <button class="small" id="zoom-in">+</button></span>
+          </div>
+          <canvas id="timeline" class="timeline"></canvas>
+          <input type="range" id="pan" min="0" max="1000" value="0" hidden>
+          <div class="sub" id="sel-info">Nothing selected.</div>
+
+          <h2>Label the selection as</h2>
+          <div class="grid3 paint" id="paint"></div>
+
+          <div class="row-tools">
+            <label>Distance walked <input id="ed-dist" type="number" min="1" step="1" inputmode="decimal" placeholder="?"> m</label>
+            <span class="sub dim" id="ed-est"></span>
+          </div>
+          <div class="sub dim">The real length of this walk, if you know it (campus map, or a measured stretch). It calibrates this walker's stride. Leave empty if unsure.</div>
+          <div class="row-tools">
+            <label>Announce turns <input id="lead" type="number" min="0" max="15" step="0.5" value="4" inputmode="decimal"> m early</label>
+            <button class="small" id="autolabel">Redo auto-labels</button>
+          </div>
+          <div class="sub dim">Auto-labels come from the turns the gyro saw (▲ on the timeline), your stair taps,
+            stairs the classifier found (its own band, if it's trained on stairs), the last 2 m (arrived) and any corrections you made while navigating.</div>
+          <div class="seg go">
+            <button id="save">Save &amp; use for training</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ TRAIN -->
+      <section data-pane="train" hidden>
+        <div class="card">
+          <h2 class="first">Route settings</h2>
+          <div class="form">
+            <label class="wide">Name <input id="set-name" autocomplete="off" maxlength="60"></label>
+            <label>Length (m) <input id="set-len" type="number" min="1" step="1" inputmode="decimal" placeholder="if known"></label>
+            <label>Count turns from (°) <input id="turn-min" type="number" min="15" max="120" step="5" inputmode="decimal"></label>
+          </div>
+          <div class="sub dim">Heading changes smaller than the turn threshold are wiggles (sidesteps, swerving round people), not turns.
+            Lower it for shallow forks on this route. After changing it, redo the auto-labels on this route's walks, then train.</div>
+          <div class="row-tools">
+            <button class="small" id="route-save">Save settings</button>
+            <button class="small danger" id="route-delete">Delete route…</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="policy-info" class="sub">Not trained yet.</div>
+          <div class="seg go"><button id="train">Train this route</button></div>
+          <div class="sub dim">Behaviour cloning: every 0.2 s of each ticked walk becomes an example
+            (distance walked, distance since the last turn, heading, turns so far) → (what you did).
+            Navigation looks up the 7 most similar moments of this route. Corrections from DAgger runs count 3×.
+            Each route is trained on its own walks (up to 10); stride calibration uses walks from every route.</div>
+        </div>
+        <h2>Stride calibration <span class="hint">per walker, all routes</span></h2>
+        <table id="cal" class="eval"></table>
+        <h2>Leave-one-walk-out check <span class="hint" id="eval-state"></span></h2>
+        <div class="sub dim">Each walk replayed through a policy trained on the other walks of its route.</div>
+        <table id="eval" class="eval"></table>
+      </section>
+    </main>
+    <script src="libs/socket.io.min.js"></script>
+    <script src="libs/arduino.js"></script>
+    <script src="nav.js"></script>
+  </body>
+</html>

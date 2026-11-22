@@ -34,8 +34,9 @@ LABELS = features.ACTIVITIES
 def label_for(path):
     if path.parent.name in LABELS:
         return path.parent.name
-    prefix = path.stem.split("_")[0]
-    return prefix if prefix in LABELS else None
+    # Longest matching prefix: 'stairs_up_2026...' is stairs_up, not 'stairs'.
+    hits = [c for c in LABELS if path.stem.startswith(c + "_")]
+    return max(hits, key=len) if hits else None
 
 
 def load_windows(data_dir, trim_s):

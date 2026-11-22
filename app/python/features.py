@@ -11,7 +11,7 @@ FS = 50            # Hz, set by the sketch
 WINDOW = 128       # samples (2.56 s)
 HOP = 64           # samples (50 % overlap -> one prediction every 1.28 s)
 
-ACTIVITIES = ["standing", "walking", "running", "biking"]
+ACTIVITIES = ["standing", "walking", "running", "biking", "stairs_up", "stairs_down"]
 
 # Model 1 may look at the peak along exactly one signed accelerometer direction.
 DIRECTIONS = ["+x", "-x", "+y", "-y", "+z", "-z"]

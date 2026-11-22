@@ -1,5 +1,5 @@
 name: Gait Step Counter
-description: Ankle-worn MPU6050 that tells standing, walking, running and biking apart with two non-neural models, and counts steps with a neural network.
+description: Ankle-worn MPU6050 that tells standing, walking, running and biking apart, counts steps with a neural network, and navigates campus routes by behaviour cloning (no GPS or wifi).
 icon: 🦶
 ports: []
 bricks:

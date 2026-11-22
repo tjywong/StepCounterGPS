@@ -51,8 +51,9 @@ INPUT_SETS = {"all": range(8), "accel": (0, 1, 2, 6), "gyro": (3, 4, 5, 7)}   # 
 def label_for(path):
     if path.parent.name in features.ACTIVITIES:
         return path.parent.name
-    prefix = path.stem.split("_")[0]
-    return prefix if prefix in features.ACTIVITIES else None
+    # Longest matching prefix: 'stairs_up_2026...' is stairs_up, not 'stairs'.
+    hits = [c for c in features.ACTIVITIES if path.stem.startswith(c + "_")]
+    return max(hits, key=len) if hits else None
 
 
 def load_recordings(data_dir, trim_s):
