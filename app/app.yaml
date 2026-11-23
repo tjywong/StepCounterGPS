@@ -1,6 +1,6 @@
-name: Gait Step Counter
-description: Ankle-worn MPU6050 that tells standing, walking, running and biking apart, counts steps with a neural network, and navigates campus routes by behaviour cloning (no GPS or wifi).
-icon: 🦶
+name: Campus Navigator
+description: Ankle-worn MPU6050 that counts steps with a neural network, tells gaits and stairs apart, and navigates campus routes by behaviour cloning (no GPS or wifi).
+icon: 🧭
 ports: []
 bricks:
 - arduino:web_ui: {}

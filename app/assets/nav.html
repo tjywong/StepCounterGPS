@@ -66,6 +66,7 @@
           <div id="instr" class="instr" data-action="straight">
             <div class="glyph" id="instr-glyph">↑</div>
             <div class="instr-text" id="instr-text">Straight</div>
+            <div class="instr-next" id="instr-next" hidden></div>
             <div class="sub" id="instr-who"></div>
           </div>
           <div class="sub center" id="s-activity"></div>
@@ -133,7 +134,7 @@
           </div>
           <div class="sub dim">The real length of this walk, if you know it (campus map, or a measured stretch). It calibrates this walker's stride. Leave empty if unsure.</div>
           <div class="row-tools">
-            <label>Announce turns <input id="lead" type="number" min="0" max="15" step="0.5" value="4" inputmode="decimal"> m early</label>
+            <label>Announce turns <input id="lead" type="number" min="0" max="15" step="0.5" value="6" inputmode="decimal"> m early</label>
             <button class="small" id="autolabel">Redo auto-labels</button>
           </div>
           <div class="sub dim">Auto-labels come from the turns the gyro saw (▲ on the timeline), your stair taps,

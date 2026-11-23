@@ -66,6 +66,19 @@ def on_imu_batch(batch):
 
 Bridge.provide("imu_batch", on_imu_batch)
 
+# The sketch reports sensor health every 2 s while reads fail, and once when they recover.
+imu_health = ""
+
+
+def on_imu_health(text):
+    global imu_health
+    if text != imu_health:
+        print("IMU:", text)
+    imu_health = text
+
+
+Bridge.provide("imu_health", on_imu_health)
+
 
 def drain():
     with lock:
@@ -198,6 +211,10 @@ class NavSession:
         self.odo = nav.Odometry(stepnet.load(STEP_MODEL), turn_min=turn_min,
                                 classify=self._load_classifier())
         self.smoother = nav.Smoother()
+        # What comes after the current instruction: shown action, and where along the walk
+        # (metres) it starts, smoothed so the countdown doesn't jump around.
+        self.next_smoother = nav.Smoother(hold=3)
+        self.next_action, self.next_at = None, None
         self.row = None
         self.action, self.policy_action, self.conf, self.votes = "straight", None, 0.0, {}
         self.override = None            # expert correction in force: {"action", "t0"}
@@ -246,9 +263,24 @@ class NavSession:
         if self.override:
             self.action = self.override["action"]
             exp = nav.ACTIONS.index(self.action)
+        if self.policy and not row["calibrating"]:
+            self._update_next(row)
         self.walk["trace"]["rows"].append([row["t"], row["steps"], row["swing"], row["heading"],
                                            row["activity"], row["calibrating"], pol, exp])
         self.changed = self.changed or self.action != before
+
+    def _update_next(self, row):
+        here = row["swing"] * self.k
+        a, ahead = self.policy.next_after(self.action)
+        shown = self.next_smoother.push(a or "none")
+        if shown == "none" or shown == self.action:
+            self.next_action, self.next_at = None, None
+            return
+        if shown != self.next_action:
+            self.next_action, self.next_at = shown, None
+        if a == shown:
+            at = here + ahead
+            self.next_at = at if self.next_at is None else self.next_at + 0.3 * (at - self.next_at)
 
     def correct(self, action):
         """Expert takes over with `action`; None hands control back to the policy."""
@@ -294,6 +326,9 @@ class NavSession:
             "action": self.action, "policy_action": self.policy_action,
             "override": self.override["action"] if self.override else None,
             "confidence": round(self.conf, 2), "votes": self.votes,
+            "next": self.next_action,
+            "next_m": None if self.next_at is None
+            else max(0, round(self.next_at - r.get("swing", 0) * self.k)),
             "marks": self.walk["marks"][-3:], "corrections": len(self.walk["corrections"]),
         }}
 
@@ -544,9 +579,9 @@ class Controller:
             self._send_walk(walk)
         elif "walk_autolabel" in req:
             try:
-                lead = min(15.0, max(0.0, float(req.get("lead_m", 4.0))))
+                lead = min(15.0, max(0.0, float(req.get("lead_m", nav.LEAD_M_DEFAULT))))
             except (TypeError, ValueError):
-                lead = 4.0
+                lead = nav.LEAD_M_DEFAULT
             cal = self.cal
             if "distance_m" in req:      # use the distance being typed in, even before saving
                 walk["distance_m"] = self._metres(req.get("distance_m"))
@@ -686,7 +721,7 @@ class Controller:
 
     def status(self):
         return {"mode": self.mode, "label": self.label, "error": self.error,
-                "rate_hz": self.rate_hz, "labels": features.ACTIVITIES,
+                "rate_hz": self.rate_hz, "imu_health": imu_health, "labels": features.ACTIVITIES,
                 "recordings": self.recordings,
                 "walks": self.walks, "max_walks": nav.MAX_TRAIN_WALKS,
                 "routes": self._route_status(), "route": self.routes.current,

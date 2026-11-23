@@ -48,6 +48,7 @@ K_DEFAULT = 0.70 / DEFAULT_SWING_PER_STEP   # m per deg of swing: a 0.70 m step 
 STEP_DEFAULT = 0.70      # m per step, for the step-count-only baseline in evaluate()
 
 TURN_MIN_DEFAULT = 45.0  # smaller heading changes are wiggles, not turns (a setting)
+LEAD_M_DEFAULT = 6.0     # auto-labels announce turns and stairs this far ahead (a setting)
 TURN_END_DPS = 10.0      # turn is over when heading settles below this rate
 TURN_REF_TAU_S = 3.0     # reference heading follows gentle path curves
 
@@ -362,7 +363,7 @@ def stairs_runs(rows):
     return runs
 
 
-def auto_label(walk, k, turn_min=TURN_MIN_DEFAULT, lead_m=4.0, arrive_m=2.0):
+def auto_label(walk, k, turn_min=TURN_MIN_DEFAULT, lead_m=LEAD_M_DEFAULT, arrive_m=2.0):
     """Hindsight labels. In a demonstration you already walked the route, so the turns the
     gyro saw ARE the expert's actions: label each one from `lead_m` before it starts until
     it ends. Stairs: your taps, plus flights the classifier found where you didn't tap.
@@ -599,7 +600,7 @@ def dataset(walks, cal, turn_min=TURN_MIN_DEFAULT):
     """(route, x, action, weight) for every trace row of every walk. Rows inside an expert
     correction weigh 3x: they are exactly the states where the policy was wrong."""
     out = []
-    for w in walks:
+    for wi, w in enumerate(walks):
         rows, _ = derive(w, turn_min)
         times = [r["t"] for r in rows]
         labels = labels_per_row(times, w.get("labels", []))
@@ -610,7 +611,7 @@ def dataset(walks, cal, turn_min=TURN_MIN_DEFAULT):
                 continue
             expert = r.get("expert")
             weight = 3.0 if c != "straight" or (expert is not None and expert >= 0) else 1.0
-            out.append((w["route"], features(r, k), lab, weight))
+            out.append((w["route"], features(r, k), lab, weight, wi))
     return out
 
 
@@ -626,19 +627,23 @@ class Policy:
         self.turn_min = spec.get("turn_min", TURN_MIN_DEFAULT)
         self.calibration = spec.get("calibration", {})
         self.routes = {}
+        self.ahead = {}      # route -> per row: the next two maneuvers [(action, metres ahead)]
+        self._best = []
         for route, d in spec["routes"].items():
             self.routes[route] = [([v / s for v, s in zip(x, self.scales)], ACTIONS.index(a), wt)
                                   for x, a, wt in zip(d["X"], d["y"], d["w"])]
+            self.ahead[route] = upcoming(d["X"], d["y"], d.get("walk"))
 
     @staticmethod
     def fit(walks, k=7, turn_min=TURN_MIN_DEFAULT, cal=None):
         cal = calibrate(walks) if cal is None else cal
         routes = {}
-        for route, x, a, wt in dataset(walks, cal, turn_min):
-            d = routes.setdefault(route, {"X": [], "y": [], "w": []})
+        for route, x, a, wt, wi in dataset(walks, cal, turn_min):
+            d = routes.setdefault(route, {"X": [], "y": [], "w": [], "walk": []})
             d["X"].append([round(v, 3) for v in x])
             d["y"].append(a)
             d["w"].append(wt)
+            d["walk"].append(wi)
         return {"type": "knn_policy", "k": k, "scales": SCALES, "features": FEATURES,
                 "actions": ACTIONS, "turn_min": turn_min, "calibration": cal,
                 "routes": routes, "walks": [w["id"] for w in walks]}
@@ -652,29 +657,84 @@ class Policy:
         if not table:
             return "straight", 0.0, {}
         q = [v / s for v, s in zip(x, self.scales)]
-        best = []                                   # (d2, action, weight), k smallest
+        best = []                                   # (d2, action, weight, row), k smallest
         worst = float("inf")
-        for xs, a, wt in table:
+        for row, (xs, a, wt) in enumerate(table):
             d2 = 0.0
             for u, v in zip(xs, q):
                 d2 += (u - v) * (u - v)
                 if d2 >= worst:
                     break
             else:
-                best.append((d2, a, wt))
+                best.append((d2, a, wt, row))
                 if len(best) > self.k:
                     best.sort()
                     best.pop()
                     worst = best[-1][0]
                 elif len(best) == self.k:
                     worst = max(b[0] for b in best)
+        self._best = (route, best)
         votes = [0.0] * len(ACTIONS)
-        for d2, a, wt in best:
+        for d2, a, wt, _ in best:
             votes[a] += wt / (math.sqrt(d2) + 0.1)
         total = sum(votes) or 1.0
         i = max(range(len(votes)), key=votes.__getitem__)
         return ACTIONS[i], votes[i] / total, {ACTIONS[j]: round(v / total, 2)
                                              for j, v in enumerate(votes) if v > 0}
+
+
+    def next_after(self, current):
+        """What comes after `current` (the instruction now showing), from the neighbours of
+        the last predict(): -> (action, metres ahead), or (None, None). Each neighbour knows
+        the next two maneuvers on its own walk; if its next one is the instruction already
+        showing (it hasn't reached it yet), the one after that counts."""
+        route, best = self._best if self._best else (None, [])
+        votes, dists = {}, {}
+        for d2, _, wt, row in best:
+            for a, ahead in self.ahead[route][row]:
+                if a == current:
+                    continue
+                v = wt / (math.sqrt(d2) + 0.1)
+                votes[a] = votes.get(a, 0.0) + v
+                dists.setdefault(a, []).append((v, ahead))
+                break
+        if not votes:
+            return None, None
+        a = max(votes, key=votes.get)
+        total = sum(v for v, _ in dists[a])
+        return a, sum(v * d for v, d in dists[a]) / total
+
+
+def upcoming(X, y, walk_of=None):
+    """For every row of a policy table: the next two maneuvers (non-straight label
+    stretches) after the stretch this row is in, as [(action, metres from this row to
+    where it starts)]. `walk_of` says which walk each row came from; older policies
+    lack it, so a new walk is assumed wherever the distance walked drops back."""
+    n = len(y)
+    if walk_of is None:
+        walk_of, w = [], 0
+        for i in range(n):
+            if i and X[i][0] < X[i - 1][0] - 1.0:
+                w += 1
+            walk_of.append(w)
+    out = [[] for _ in range(n)]
+    i = 0
+    while i < n:
+        j = i
+        while j < n and walk_of[j] == walk_of[i]:
+            j += 1
+        # rows i..j-1 are one walk: split into stretches of one label
+        segs, s = [], i
+        for r in range(i + 1, j + 1):
+            if r == j or y[r] != y[s]:
+                segs.append((s, r, y[s]))
+                s = r
+        for k, (s0, s1, _) in enumerate(segs):
+            later = [(a, X[t][0]) for t, _, a in segs[k + 1:] if a != "straight"][:2]
+            for r in range(s0, s1):
+                out[r] = [(a, max(0.0, d - X[r][0])) for a, d in later]
+        i = j
+    return out
 
 
 def load_policy(path):

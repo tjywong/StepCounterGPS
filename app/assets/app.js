@@ -23,9 +23,21 @@ $('#recordings').addEventListener('change', (e) => {
   if (input) ui.send_message('set_steps', { name: input.dataset.steps, steps: input.value });
 });
 
+// Tap ✕ once to arm it ("Delete?"), again to delete. No confirm() popup: phone browsers
+// can silently block those.
 $('#recordings').addEventListener('click', (e) => {
-  const name = e.target.closest('button')?.dataset.delete;
-  if (name && confirm(`Delete ${name}?`)) ui.send_message('delete_recording', { name });
+  const btn = e.target.closest('button[data-delete]');
+  if (!btn) return;
+  if (!btn.classList.contains('armed')) {
+    $('#recordings').querySelectorAll('.del.armed').forEach((b) => { b.classList.remove('armed'); b.textContent = '✕'; });
+    btn.classList.add('armed');
+    btn.textContent = 'Delete?';
+    return;
+  }
+  // Leave any focused step box first, or the list won't redraw (see the status handler).
+  document.activeElement?.blur();
+  ui.send_message('delete_recording', { name: btn.dataset.delete });
+  btn.closest('li').remove();
 });
 
 const pretty = (l) => (l[0].toUpperCase() + l.slice(1)).replace('_up', ' ↑').replace('_down', ' ↓');
@@ -50,7 +62,7 @@ ui.on_message('status', (s) => {
   $('#live-record').hidden = s.mode !== 'record';
   $('#live-classify').hidden = s.mode !== 'classify';
   $('#live-idle').hidden = s.mode !== 'idle';
-  $('#rate').textContent = s.rate_hz;
+  $('#rate').textContent = s.rate_hz + (s.rate_hz < 40 && s.imu_health ? ` · ${s.imu_health}` : '');
   $('#error').hidden = !s.error;
   $('#error').textContent = s.error || '';
 

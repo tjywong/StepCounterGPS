@@ -8,6 +8,10 @@ const NAME = { straight: 'Straight', left: 'Turn left', right: 'Turn right',
 const SHORT = { straight: 'Straight', left: 'Left', right: 'Right',
   stairs_up: 'Stairs ↑', stairs_down: 'Stairs ↓', arrived: 'Arrived' };
 const GLYPH = { straight: '↑', left: '↰', right: '↱', stairs_up: '⇡', stairs_down: '⇣', arrived: '●' };
+// Spoken: "Now turn left. In 8 metres, go down the stairs."
+const SAY = { straight: 'go straight', left: 'turn left', right: 'turn right',
+  stairs_up: 'go up the stairs', stairs_down: 'go down the stairs', arrived: 'you have arrived' };
+const SAY_NEXT = { ...SAY, arrived: 'you arrive' };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -151,7 +155,15 @@ function renderWalk(s) {
   $('#live-kind').textContent = n.kind === 'demo' ? '● Demo' : '▶ Navigating';
   $('#live-kind').className = 'pill ' + (n.kind === 'demo' ? 'rec' : 'on');
   $('#live-route').textContent = `${n.route} · ${n.walker}`;
-  $('#calib').hidden = !n.calibrating;
+  // rate_hz is measured over the last 2 s; 0 means the board gets no IMU samples at all
+  // (calibration would wait forever), e.g. a loose sensor wire.
+  // A loose wire also shows up as a trickle of samples (a few Hz): just as useless.
+  const noData = s.rate_hz === 0, weak = s.rate_hz > 0 && s.rate_hz < 40;
+  $('#calib').hidden = !n.calibrating && !noData && !weak;
+  $('#calib').textContent = noData || weak
+    ? `${noData ? 'No sensor data' : `Sensor dropping out (${s.rate_hz} Hz, should be ~50)`}: ` +
+      `check the wiring${s.imu_health ? ` (${s.imu_health})` : ''}`
+    : 'Stand still: measuring gyro bias…';
   $('#instr').hidden = n.calibrating || n.kind === 'demo';
   $('#correct-box').hidden = n.kind !== 'dagger';
   $('#s-dist').textContent = (n.calibrated ? '' : '≈') + n.dist.toFixed(0);
@@ -169,13 +181,20 @@ function renderWalk(s) {
     $('#instr').dataset.action = a;
     $('#instr-glyph').textContent = GLYPH[a];
     $('#instr-text').textContent = NAME[a];
+    const nx = n.next && n.next_m != null ? n.next : null;
+    $('#instr-next').hidden = !nx;
+    if (nx) $('#instr-next').textContent = `Then ${GLYPH[nx]} ${NAME[nx]} in ${n.next_m} m`;
     $('#instr-who').textContent = n.override
       ? `your correction (policy says ${SHORT[n.policy_action] ?? '–'})`
       : `policy · ${Math.round(n.confidence * 100)}% of neighbours agree`;
     document.querySelectorAll('#correct button').forEach((b) => b.classList.toggle('sel', b.dataset.action === n.override));
     $('#auto').hidden = !n.override;
     if (a !== lastSpoken) {
-      if (lastSpoken !== null && $('#speak').checked) { speak(NAME[a]); buzz(a === 'straight' ? 80 : [150, 80, 150]); }
+      if (lastSpoken !== null && $('#speak').checked) {
+        const then = nx && a !== 'arrived' ? ` In ${n.next_m} metres, ${SAY_NEXT[nx]}.` : '';
+        speak(`Now ${SAY[a]}.${then}`);
+        buzz(a === 'straight' ? 80 : [150, 80, 150]);
+      }
       lastSpoken = a;
     }
   }

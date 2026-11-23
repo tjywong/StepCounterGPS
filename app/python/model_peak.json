@@ -3,14 +3,14 @@
  "feature": "peak_minus_mean",
  "direction": "+x",
  "thresholds": [
-  0.25105054676532745,
-  0.7413849532604218,
-  1.5709354281425476
+  0.34778933972120285,
+  1.5459460020065308,
+  1.8639447689056396
  ],
  "labels": [
   "standing",
   "walking",
-  "biking",
-  "running"
+  "stairs_up",
+  "stairs_down"
  ]
 }

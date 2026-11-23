@@ -93,6 +93,7 @@ body[data-mode="record"] #modes button.sel { background: var(--rec); border-colo
 #recordings li span { font-size: 13px; color: var(--dim); }
 .del { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 14px; padding: 4px 6px; }
 .del:hover { color: var(--rec); }
+.del.armed { background: var(--rec); color: #fff; border-radius: 6px; font-weight: 600; }
 
 .steps { display: flex; align-items: flex-end; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .steps > div:first-child { flex: 1; }
@@ -132,6 +133,7 @@ a.pill { color: var(--text); text-decoration: none; }
 .instr .glyph { font-size: 96px; line-height: 1; font-weight: 700; }
 .instr .instr-text { font-size: 30px; font-weight: 700; }
 .instr .sub { color: var(--dim); }
+.instr .instr-next { font-size: 20px; font-weight: 600; margin-top: 6px; color: var(--text, inherit); }
 .instr[data-action="left"] { border-color: var(--a-left); color: var(--a-left); }
 .instr[data-action="right"] { border-color: var(--a-right); color: var(--a-right); }
 .instr[data-action="stairs_up"] { border-color: var(--a-stairs_up); color: var(--a-stairs_up); }
